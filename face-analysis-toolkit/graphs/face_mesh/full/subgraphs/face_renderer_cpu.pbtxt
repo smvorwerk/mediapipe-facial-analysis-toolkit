@@ -1,0 +1,72 @@
+# MediaPipe face mesh rendering subgraph.
+
+type: "FaceRendererCpu"
+
+# CPU image. (ImageFrame)
+input_stream: "IMAGE:input_image"
+
+# Regions of interest calculated based on palm detections.
+# (std::vector<NormalizedRect>)
+input_stream: "NORM_RECTS:rects"
+
+# Proctor Results (std::vector<ProctorResult>)
+input_stream: "RESULT:multi_face_results"
+
+# CPU image with rendered data. (ImageFrame)
+output_stream: "IMAGE:output_image"
+
+# Converts normalized rects to drawing primitives for annotation overlay.
+node {
+  calculator: "RectToRenderDataCalculator"
+  input_stream: "NORM_RECTS:rects"
+  output_stream: "RENDER_DATA:rects_render_data"
+  node_options: {
+    [type.googleapis.com/mediapipe.RectToRenderDataCalculatorOptions] {
+      filled: false
+      color { r: 255 g: 0 b: 0 }
+      thickness: 4.0
+    }
+  }
+}
+
+# Outputs each element of multi_face_results at a fake timestamp for the rest
+# of the graph to process. At the end of the loop, outputs the BATCH_END
+# timestamp for downstream calculators to inform them that all elements in the
+# vector have been processed.
+node {
+  calculator: "BeginLoopProctorResultVectorCalculator"
+  input_stream: "ITERABLE:multi_face_results"
+  output_stream: "ITEM:proctor_result"
+  output_stream: "BATCH_END:result_timestamp"
+}
+
+node {
+  calculator: "ProctorResultToRenderDataCalculator"
+  input_stream: "RESULT:proctor_result"
+  output_stream: "RENDER:result_render_data"
+}
+
+# Collects a RenderData object for each result into a vector. Upon receiving the
+# BATCH_END timestamp, outputs the vector of RenderData at the BATCH_END
+# timestamp.
+node {
+  calculator: "EndLoopRenderDataCalculator"
+  input_stream: "ITEM:result_render_data"
+  input_stream: "BATCH_END:result_timestamp"
+  output_stream: "ITERABLE:multi_face_results_render_data"
+}
+
+# Draws annotations and overlays them on top of the input images.
+node {
+  calculator: "AnnotationOverlayCalculator"
+  input_stream: "IMAGE:input_image"
+  input_stream: "VECTOR:0:multi_face_results_render_data"
+  input_stream: "rects_render_data"
+
+  # By pass the unbounded wait in case no render data (i.e. No face detected)
+  # input_stream_handler {
+  #  input_stream_handler: "ImmediateInputStreamHandler"
+  # }
+
+  output_stream: "IMAGE:output_image"
+}

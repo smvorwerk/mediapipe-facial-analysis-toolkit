@@ -1,0 +1,72 @@
+# Customized MediaPipe face mesh rendering subgraph.
+type: "FaceRendererGpu"
+
+# GPU image. (GpuBuffer)
+input_stream: "IMAGE:input_image"
+
+# Regions of interest calculated based on face detections.
+# (std::vector<NormalizedRect>)
+input_stream: "NORM_RECTS:rects"
+
+# Multi-face orientation data
+# (std::vector<std::map<std::string, double>>)
+input_stream: "orientationS:multi_face_orientations"
+
+# Multi-face blink data
+# (std::vector<std::map<std::string, double>>)
+input_stream: "BLINKS:multi_face_blinks"
+
+# GPU image with rendered data. (GpuBuffer)
+output_stream: "IMAGE:output_image"
+
+# Calculate image properties
+node {
+  calculator: "ImagePropertiesCalculator"
+  input_stream: "IMAGE_GPU:input_image"
+  output_stream: "SIZE:image_size"
+}
+
+# Convert the FaceOrientation to RenderData
+node {
+  calculator: "FaceOrientationToRenderDataCalculator"
+  input_stream: "orientation:multi_face_orientations"
+  output_stream: "RENDER:orientation_render_data"
+}
+
+# Converts detected eye blinks to drawing primitives for annotation overlay.
+node {
+  calculator: "EyeBlinkToRenderDataCalculator"
+  input_stream: "BLINK:multi_face_blinks"
+  output_stream: "RENDER:blink_render_data"
+}
+
+# Converts normalized rects to drawing primitives for annotation overlay.
+node {
+  calculator: "RectToRenderDataCalculator"
+  input_stream: "NORM_RECTS:rects"
+  output_stream: "RENDER_DATA:rects_render_data"
+  node_options: {
+    [type.googleapis.com/mediapipe.RectToRenderDataCalculatorOptions] {
+      filled: false
+      color { r: 255 g: 0 b: 0 }
+      thickness: 4.0
+    }
+  }
+}
+
+# Draws annotations and overlays them on top of the input images.
+node {
+  calculator: "AnnotationOverlayCalculator"
+  input_stream: "IMAGE_GPU:input_image"
+  
+  # By pass the unbounded wait in case no render data (i.e. No face detected)
+  # input_stream_handler {
+  #  input_stream_handler: "ImmediateInputStreamHandler"
+  # }
+
+  input_stream: "orientation_render_data"
+  input_stream: "blink_render_data"
+  input_stream: "rects_render_data"
+
+  output_stream: "IMAGE_GPU:output_image"
+}

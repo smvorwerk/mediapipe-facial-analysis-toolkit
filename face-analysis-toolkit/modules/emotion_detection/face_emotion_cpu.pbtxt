@@ -1,0 +1,153 @@
+# MediaPipe graph to detect/predict face landmarks. (CPU input, and inference is
+# executed on CPU.)
+#
+# It is required that "face_landmark.tflite" is available at
+# "mediapipe/modules/face_landmark/face_landmark.tflite"
+# path during execution if `with_attention` is not set or set to `false`.
+#
+# It is required that "face_landmark_with_attention.tflite" is available at
+# "mediapipe/modules/face_landmark/face_landmark_with_attention.tflite"
+# path during execution if `with_attention` is set to `true`.
+#
+# EXAMPLE:
+#   node {
+#     calculator: "FaceLandmarkCpu"
+#     input_stream: "IMAGE:image"
+#     input_stream: "ROI:face_roi"
+#     input_side_packet: "WITH_ATTENTION:with_attention"
+#     output_stream: "LANDMARKS:face_landmarks"
+#   }
+
+type: "FaceEmotionCpu"
+
+# CPU image. (ImageFrame)
+input_stream: "IMAGE:image"
+# ROI (region of interest) within the given image where a face is located.
+# (NormalizedRect)
+input_stream: "ROI:roi"
+# Whether to run face mesh model with attention on lips and eyes. (bool)
+# Attention provides more accuracy on lips and eye regions as well as iris
+# landmarks.
+input_side_packet: "WITH_ATTENTION:with_attention"
+
+# 468 or 478 facial landmarks within the given ROI. (NormalizedLandmarkList)
+#
+# Number of landmarks depends on the WITH_ATTENTION flag. If it's `true` - then
+# there will be 478 landmarks with refined lips, eyes and irises (10 extra
+# landmarks are for irises), otherwise 468 non-refined landmarks are returned.
+#
+# NOTE: if a face is not present within the given ROI, for this particular
+# timestamp there will not be an output packet in the LANDMARKS stream. However,
+# the MediaPipe framework will internally inform the downstream calculators of
+# the absence of this packet so that they don't wait for it unnecessarily.
+output_stream: "CLASSIFICATIONS:face_emotions"
+
+# Transforms the input image into a 48x48 tensor.
+node: {
+  calculator: "ImageToTensorCalculator"
+  input_stream: "IMAGE:image"
+  input_stream: "NORM_RECT:roi"
+  output_stream: "TENSORS:input_tensors"
+  output_stream: "MATRIX:matrix"
+  options: {
+    [mediapipe.ImageToTensorCalculatorOptions.ext] {
+      output_tensor_width: 48
+      output_tensor_height: 48
+      output_tensor_float_range {
+        min: 0.0
+        max: 1.0
+      }
+    }
+  }
+}
+#node {
+#  calculator: "ImageCroppingCalculator"
+#  input_stream: "IMAGE:image"
+#  input_stream: "NORM_RECT:roi"
+#  output_stream: "IMAGE:face_image"
+#  options: {
+#    [mediapipe.ImageCroppingCalculatorOptions.ext] {
+#      border_mode: BORDER_REPLICATE
+#    }
+#  }
+#}
+
+# TfLiteTensor.
+#node {
+#  calculator: "TfLiteConverterCalculator"
+#  input_stream: "IMAGE:face_image"
+#  output_stream: "TENSORS:image_tensor"
+#  options: {
+#    [mediapipe.TfLiteConverterCalculatorOptions.ext] {
+#      zero_center: false
+#    }
+#  }
+#}
+
+
+# Loads the face landmarks TF Lite model.
+#node {
+#  calculator: "FaceLandmarksModelLoader"
+#  input_side_packet: "WITH_ATTENTION:with_attention"
+#  output_side_packet: "MODEL:model"
+#}
+
+# Generates a single side packet containing a TensorFlow Lite op resolver that
+# supports custom ops needed by the model used in this graph.
+#node {
+#  calculator: "TfLiteCustomOpResolverCalculator"
+#  output_side_packet: "op_resolver"
+#}
+
+# Runs a TensorFlow Lite model on CPU that takes an image tensor and outputs a
+# vector of tensors representing, for instance, detection boxes/keypoints and
+# scores.
+node {
+  calculator: "InferenceCalculator"
+  input_stream: "TENSORS:input_tensors"
+#  input_side_packet: "MODEL:model"
+#  input_side_packet: "CUSTOM_OP_RESOLVER:op_resolver"
+  output_stream: "TENSORS:output_tensors"
+  options: {
+    [mediapipe.InferenceCalculatorOptions.ext] {
+	  model_path:"mediapipe/modules/emotion_detection/emotion_detection.tflite"
+      delegate { xnnpack {} }
+    }
+  }
+}
+
+node {
+  calculator: "TensorsToClassificationCalculator"
+  input_stream: "TENSORS:output_tensors"
+  output_stream: "CLASSIFICATIONS:face_emotions"
+  options: {
+    [mediapipe.TensorsToClassificationCalculatorOptions.ext] {
+      top_k: 1
+      label_map_path: "mediapipe/models/emotion_detection_labelmap.txt"
+      binary_classification: False
+    }
+  }
+}
+
+#node {
+#calculator: "TfLiteInferenceCalculator"
+#   input_stream: "TENSORS:image_tensor"
+#   output_stream: "TENSORS:output_tensors"
+#   options: {
+#     [mediapipe.TfLiteInferenceCalculatorOptions.ext] {
+#       model_path: "mediapipe/modules/emotion_detection/emotion_detection.tflite"
+#     }
+#  }
+#}
+#node {
+#	calculator: "TfLiteTensorsToClassificationCalculator"
+#	input_stream: "TENSORS:output_tensors"
+#	output_stream: "CLASSIFICATIONS:face_emotions"
+#	options: {
+#		[mediapipe.TfLiteTensorsToClassificationCalculatorOptions.ext]{
+#			min_score_threshold: 0.1
+#			label_map_path: "mediapipe/models/emotion_detection_label_map.txt"
+#		}
+#	}
+#}
+

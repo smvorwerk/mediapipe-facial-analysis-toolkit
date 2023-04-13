@@ -1,0 +1,16 @@
+syntax = "proto2";
+
+package mediapipe;
+
+import "mediapipe/framework/calculator.proto";
+
+message FaceAlignCalculatorOptions {
+  extend mediapipe.CalculatorOptions {
+    optional FaceAlignCalculatorOptions ext = 162826122;
+  }
+
+  required int32 interocular_distance = 1;
+  optional int32 width = 2 [default = -1];
+  optional int32 height = 3 [default = -1];
+
+}
