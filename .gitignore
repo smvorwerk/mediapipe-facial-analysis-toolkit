@@ -6,3 +6,5 @@ node_modules/
 .configure.bazelrc
 .user.bazelrc
 face-analysis-toolkit/datasets/DATASET-BLINK-DETECTION.zip
+
+.idea/
